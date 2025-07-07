@@ -2,35 +2,33 @@ const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 const tileSize = 64;
 
-// 0 = Empty, 1 = Wall, 2 = Target, 3 = Box, 4 = Player, 5 = Box on Target
+// 0 = Empty, 1 = Wall, 2 = Target, 3 = Box, 4 = Box on Target
 const levels = [
     {
         layout: [
             [1, 1, 1, 1, 1, 1],
    	    [1, 0, 2, 1, 1, 1],
    	    [1, 0, 0, 1, 1, 1],
-    	    [1, 5, 0, 0, 4, 1],
+    	    [1, 4, 0, 0, 0, 1],
     	    [1, 0, 0, 3, 0, 1],
     	    [1, 0, 0, 1, 1, 1],
     	    [1, 1, 1, 1, 1, 1]
         ], // Microban 01
         playerStart: { x: 4, y: 3 },
 	playerDirection: 'left',
-        boxesStart: [{ x: 1, y: 3 }, { x: 3, y: 4 }]
     },
     {
         layout: [
             [1, 1, 1, 1, 1, 1],
    	    [1, 0, 0, 0, 0, 1],
-   	    [1, 0, 1, 4, 0, 1],
-    	    [1, 0, 3, 5, 0, 1],
-    	    [1, 0, 2, 5, 0, 1],
+   	    [1, 0, 1, 0, 0, 1],
+    	    [1, 0, 3, 4, 0, 1],
+    	    [1, 0, 2, 4, 0, 1],
     	    [1, 0, 0, 0, 0, 1],
     	    [1, 1, 1, 1, 1, 1]
         ], // Microban 02
         playerStart: { x: 3, y: 2 },
 	playerDirection: 'right',
-        boxesStart: [{ x: 2, y: 3 }, { x: 3, y: 3 }, { x: 3, y: 4 }]
     }
 ];
 
@@ -75,20 +73,13 @@ function draw() {
                 case 2: // Target
                     ctx.drawImage(images.target, x * tileSize, y * tileSize, tileSize, tileSize);
                     break;
-                case 5: // Box on Target
+		case 3: // Box
+		    ctx.drawImage(images.box, x * tileSize, y * tileSize, tileSize, tileSize);
+                    break;
+                case 4: // Box on Target
                     ctx.drawImage(images.box_on_target, x * tileSize, y * tileSize, tileSize, tileSize);
                     break;
-                case 0:
-                    break;
             }
-        }
-    }
-
-    // Draw boxes not on targets
-    for (let box of boxes) {
-        const isOnTarget = level[box.y][box.x] === 5;
-        if (!isOnTarget) {
-            ctx.drawImage(images.box, box.x * tileSize, box.y * tileSize, tileSize, tileSize);
         }
     }
 
@@ -100,16 +91,30 @@ function resetLevel() {
     moveHistory = [];
     const currentLevel = levels[currentLevelIndex];
     player = { ...currentLevel.playerStart, direction: currentLevel.playerDirection };
-    boxes = currentLevel.boxesStart.map(box => ({ ...box }));
     level = currentLevel.layout.map(row => [...row]); // Deep copy to avoid mutation
-    canvas.width = level[0].length * tileSize; // Set width based on the first row's length
-    canvas.height = level.length * tileSize; // Set height based on the number of rows
+    boxes = getBoxPositions();
+
+    canvas.width = level[0].length * tileSize;
+    canvas.height = level.length * tileSize;
     draw();
+}
+
+function getBoxPositions() {
+    const boxPositions = [];
+    
+    for (let y = 0; y < level.length; y++) {
+        for (let x = 0; x < level[y].length; x++) {
+            if (level[y][x] === 3 || level[y][x] === 4) {
+                boxPositions.push({ x, y });
+            }
+        }
+    }
+    return boxPositions;
 }
 
 function checkWin() {
     for (let box of boxes) {
-        if (level[box.y][box.x] !== 5) return false;
+        if (level[box.y][box.x] !== 4) return false;
     }
     return true;
 }
@@ -117,7 +122,7 @@ function checkWin() {
 function saveState() {
     moveHistory.push({
         player: { ...player },
-        boxes: boxes.map(box => ({ ...box }))
+        level: level.map(row => [...row])
     });
 }
 
@@ -139,10 +144,40 @@ document.addEventListener('keydown', (event) => {
         player.direction = 'right';
     }
 
-    if (canMove(newX, newY)) {
+    if (event.key === 'z') {
+        undo();
+    } else if (event.key === 'r') {
+        resetLevel();
+    } else if (canMove(newX, newY)) {
         saveState();
+
+	for (let box of boxes) {
+	    if (box.x === newX && box.y === newY) {
+                const boxNewX = newX + (newX - player.x);
+                const boxNewY = newY + (newY - player.y);
+
+                if (level[box.y][box.x] === 4) {
+                    level[box.y][box.x] = 2;
+                } else {
+                    level[box.y][box.x] = 0;
+                }
+
+	        if (level[boxNewY][boxNewX] === 2) {
+		    level[boxNewY][boxNewX] = 4;
+                } else {
+		    level[boxNewY][boxNewX] = 3;
+	        }
+
+                box.x = boxNewX;
+                box.y = boxNewY;
+
+                break;
+	    }
+        }
+	
 	player.x = newX;
         player.y = newY;
+
         draw();
 
         if (checkWin()) {
@@ -158,17 +193,9 @@ document.addEventListener('keydown', (event) => {
             }
         }
     }
-
-    if (event.key === 'z') {
-        undo();
-    }
-    if (event.key === 'r') {
-        restartLevel();
-    }
 });
 
 function canMove(newX, newY) {
-    // Check if new position is within bounds
     if (newY < 0 || newY >= level.length || newX < 0 || newX >= level[newY].length) {
         return false;
     }
@@ -180,44 +207,28 @@ function canMove(newX, newY) {
             const boxNewX = newX + (newX - player.x);
             const boxNewY = newY + (newY - player.y);
 
-            // Check bounds for the box movement
             if (boxNewY < 0 || boxNewY >= level.length || boxNewX < 0 || boxNewX >= level[boxNewY].length) {
                 return false;
             }
 
             if (level[boxNewY][boxNewX] === 1 || boxes.some(b => b.x === boxNewX && b.y === boxNewY)) {
-                return false; // Box cannot be pushed
+                return false;
             }
-
-            if (level[box.y][box.x] === 5) {
-                level[box.y][box.x] = 2;
-            } else {
-                level[box.y][box.x] = 0;
-            }
-
-            box.x = boxNewX;
-            box.y = boxNewY;
-            if (level[boxNewY][boxNewX] === 2) {
-                level[boxNewY][boxNewX] = 5; // Update the new position to box on target
-            }
-            break;
         }
     }
-    return true; // Move is valid
+
+    return true;
 }
 
 function undo() {
     if (moveHistory.length > 0) {
         const lastState = moveHistory.pop();
         player = lastState.player;
-        boxes = lastState.boxes;
+        level = lastState.level; // Restore the level from the last state
+	boxes = getBoxPositions();
+
         draw(); // Redraw the game to reflect the restored state
     }
-}
-
-function restartLevel() {
-    resetLevel();
-    moveHistory = [];
 }
 
 loadImages((loadedImages) => {
