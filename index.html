@@ -3,17 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sokoban Game</title>
+    <title>Your Sokoban Game</title>
     <style>
-        canvas {
-            background-color: #f0f0f0; /* Optional: gives a light gray background */
-            display: block;
-            margin: 0 auto; /* Center the canvas */
+        body {
+            display: flex;
+            justify-content: center; /* Center horizontally */
+            align-items: center;     /* Center vertically */
+            height: 100vh;          /* Full height of the viewport */
+            margin: 0;              /* Remove default margin */
+            background-color: #f4f4f4;
+        }
+
+        #gameCanvas {
+            border: 2px solid #333; /* Optional: border around the game canvas */
         }
     </style>
 </head>
 <body>
-    <canvas id="gameCanvas" width="384" height="448"></canvas>
+    <canvas id="gameCanvas" width="640" height="480"></canvas>
     <script src="game.js"></script>
 </body>
 </html>

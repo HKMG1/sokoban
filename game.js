@@ -2,6 +2,7 @@ const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 const tileSize = 64;
 
+// Levels definition
 // 0 = Empty, 1 = Wall, 2 = Target, 3 = Box, 4 = Box on Target
 const levels = [
     {
@@ -35,9 +36,9 @@ const levels = [
 let currentLevelIndex = 0;
 let player, boxes, level;
 let moveHistory = [];
-
 let images = {};
 
+// Load images
 function loadImages(callback) {
     const spriteNames = ['wall', 'target', 'box', 'box_on_target', 'player_up', 'player_down', 'player_left', 'player_right', 'ground'];
     let loadedImages = 0;
@@ -47,10 +48,7 @@ function loadImages(callback) {
         images[name] = new Image();
         images[name].src = `images/${name}.png`;
         images[name].onload = () => {
-            loadedImages++;
-            if (loadedImages === totalImages) {
-                callback(images);
-            }
+            if (++loadedImages === totalImages) callback(images);
         };
     });
 }
@@ -87,38 +85,29 @@ function draw() {
     ctx.drawImage(images[`player_${player.direction}`], player.x * tileSize, player.y * tileSize, tileSize, tileSize);
 }
 
+// Reset the level
 function resetLevel() {
     moveHistory = [];
     const currentLevel = levels[currentLevelIndex];
     player = { ...currentLevel.playerStart, direction: currentLevel.playerDirection };
-    level = currentLevel.layout.map(row => [...row]); // Deep copy to avoid mutation
+    level = currentLevel.layout.map(row => [...row]); // Deep copy
     boxes = getBoxPositions();
-
     canvas.width = level[0].length * tileSize;
     canvas.height = level.length * tileSize;
     draw();
 }
 
+// Get current box positions
 function getBoxPositions() {
-    const boxPositions = [];
-    
-    for (let y = 0; y < level.length; y++) {
-        for (let x = 0; x < level[y].length; x++) {
-            if (level[y][x] === 3 || level[y][x] === 4) {
-                boxPositions.push({ x, y });
-            }
-        }
-    }
-    return boxPositions;
+    return level.flatMap((row, y) => row.map((cell, x) => (cell === 3 || cell === 4) ? { x, y } : null)).filter(Boolean);
 }
 
+// Check win condition
 function checkWin() {
-    for (let box of boxes) {
-        if (level[box.y][box.x] !== 4) return false;
-    }
-    return true;
+    return boxes.every(box => level[box.y][box.x] === 4);
 }
 
+// Save the current game state
 function saveState() {
     moveHistory.push({
         player: { ...player },
@@ -126,54 +115,82 @@ function saveState() {
     });
 }
 
+// Undo the last move
+function undo() {
+    if (moveHistory.length > 0) {
+        const lastState = moveHistory.pop();
+        player = lastState.player;
+        level = lastState.level;
+	boxes = getBoxPositions();
+        draw();
+    }
+}
+
+// Validate if the player can move to the new position
+function canMove(newX, newY) {
+    if (newY < 0 || newY >= level.length || newX < 0 || newX >= level[newY].length || level[newY][newX] === 1) return false;
+
+    let boxToMove = boxes.find(box => box.x === newX && box.y === newY);
+    if (boxToMove) {
+        const boxNewX = newX + (newX - player.x);
+        const boxNewY = newY + (newY - player.y);
+        if (boxNewY < 0 || boxNewY >= level.length || boxNewX < 0 || boxNewX >= level[boxNewY].length || level[boxNewY][boxNewX] === 1 || boxes.some(box => box.x === boxNewX && box.y === boxNewY)) return false;
+    }
+
+    return true;
+}
+
+// Handle keyboard input
 document.addEventListener('keydown', (event) => {   
     let newX = player.x;
     let newY = player.y;
 
-    if (event.key === 'ArrowUp' || event.key === 'w') {
-        newY--;
-        player.direction = 'up';
-    } else if (event.key === 'ArrowDown' || event.key === 's') {
-        newY++;
-        player.direction = 'down';
-    } else if (event.key === 'ArrowLeft' || event.key === 'a') {
-        newX--;
-        player.direction = 'left';
-    } else if (event.key === 'ArrowRight' || event.key === 'd') {
-        newX++;
-        player.direction = 'right';
+    switch (event.key) {
+        case 'ArrowUp': 
+      	case 'w': 
+	    newY--; 
+	    player.direction = 'up';
+	    break;
+        case 'ArrowDown':
+	case 's':
+	    newY++;
+	    player.direction = 'down';
+	    break;
+        case 'ArrowLeft':
+	case 'a':
+	    newX--;
+	    player.direction = 'left';
+	    break;
+        case 'ArrowRight':
+	case 'd':
+	    newX++;
+	    player.direction = 'right';
+	    break;
+        case 'z':
+	    undo();
+	    return;
+        case 'r':
+	    resetLevel();
+	    return;
+        default:
+	    return;
     }
 
-    if (event.key === 'z') {
-        undo();
-    } else if (event.key === 'r') {
-        resetLevel();
-    } else if (canMove(newX, newY)) {
+    if (canMove(newX, newY)) {
         saveState();
 
-	for (let box of boxes) {
-	    if (box.x === newX && box.y === newY) {
-                const boxNewX = newX + (newX - player.x);
-                const boxNewY = newY + (newY - player.y);
+ 	// Move boxes if necessary
+	let boxToMove = boxes.find(box => box.x === newX && box.y === newY);
+	if (boxToMove) {
+            const boxNewX = newX + (newX - player.x);
+            const boxNewY = newY + (newY - player.y);
 
-                if (level[box.y][box.x] === 4) {
-                    level[box.y][box.x] = 2;
-                } else {
-                    level[box.y][box.x] = 0;
-                }
+            level[boxToMove.y][boxToMove.x] = (level[boxToMove.y][boxToMove.x] === 4) ? 2 : 0;
+	    level[boxNewY][boxNewX] = (level[boxNewY][boxNewX] === 2) ? 4 : 3;
 
-	        if (level[boxNewY][boxNewX] === 2) {
-		    level[boxNewY][boxNewX] = 4;
-                } else {
-		    level[boxNewY][boxNewX] = 3;
-	        }
-
-                box.x = boxNewX;
-                box.y = boxNewY;
-
-                break;
-	    }
-        }
+            boxToMove.x = boxNewX;
+            boxToMove.y = boxNewY;
+	}
 	
 	player.x = newX;
         player.y = newY;
@@ -195,43 +212,7 @@ document.addEventListener('keydown', (event) => {
     }
 });
 
-function canMove(newX, newY) {
-    if (newY < 0 || newY >= level.length || newX < 0 || newX >= level[newY].length) {
-        return false;
-    }
-
-    if (level[newY][newX] === 1) return false;
-
-    for (let box of boxes) {
-        if (box.x === newX && box.y === newY) {
-            const boxNewX = newX + (newX - player.x);
-            const boxNewY = newY + (newY - player.y);
-
-            if (boxNewY < 0 || boxNewY >= level.length || boxNewX < 0 || boxNewX >= level[boxNewY].length) {
-                return false;
-            }
-
-            if (level[boxNewY][boxNewX] === 1 || boxes.some(b => b.x === boxNewX && b.y === boxNewY)) {
-                return false;
-            }
-        }
-    }
-
-    return true;
-}
-
-function undo() {
-    if (moveHistory.length > 0) {
-        const lastState = moveHistory.pop();
-        player = lastState.player;
-        level = lastState.level; // Restore the level from the last state
-	boxes = getBoxPositions();
-
-        draw(); // Redraw the game to reflect the restored state
-    }
-}
-
-loadImages((loadedImages) => {
-    images = loadedImages;
+// Load images and start the game
+loadImages(() => {
     resetLevel();
 });
