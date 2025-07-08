@@ -34,7 +34,7 @@ const levels = [
 ];
 
 let currentLevelIndex = 0;
-let player, boxes, level;
+let player, level, targetNum;
 let moveHistory = [];
 let images = {};
 
@@ -53,17 +53,14 @@ function loadImages(callback) {
     });
 }
 
+// Draw the level
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     for (let y = 0; y < level.length; y++) {
         for (let x = 0; x < level[y].length; x++) {
-            ctx.drawImage(images.ground, x * tileSize, y * tileSize, tileSize, tileSize);
-        }
-    }
+	    ctx.drawImage(images.ground, x * tileSize, y * tileSize, tileSize, tileSize); // Ground
 
-    for (let y = 0; y < level.length; y++) {
-        for (let x = 0; x < level[y].length; x++) {
             switch (level[y][x]) {
                 case 1: // Wall
                     ctx.drawImage(images.wall, x * tileSize, y * tileSize, tileSize, tileSize);
@@ -81,8 +78,7 @@ function draw() {
         }
     }
 
-    // Draw the player based on current direction
-    ctx.drawImage(images[`player_${player.direction}`], player.x * tileSize, player.y * tileSize, tileSize, tileSize);
+    ctx.drawImage(images[`player_${player.direction}`], player.x * tileSize, player.y * tileSize, tileSize, tileSize); // Player
 }
 
 // Reset the level
@@ -91,20 +87,32 @@ function resetLevel() {
     const currentLevel = levels[currentLevelIndex];
     player = { ...currentLevel.playerStart, direction: currentLevel.playerDirection };
     level = currentLevel.layout.map(row => [...row]); // Deep copy
-    boxes = getBoxPositions();
+    targetNum = countOccurrences(level, 2);
     canvas.width = level[0].length * tileSize;
     canvas.height = level.length * tileSize;
     draw();
 }
 
-// Get current box positions
-function getBoxPositions() {
-    return level.flatMap((row, y) => row.map((cell, x) => (cell === 3 || cell === 4) ? { x, y } : null)).filter(Boolean);
+// Count the number of targets with no box
+function countOccurrences(array, element) {
+    return array.flat().reduce((count, current) => {
+        return current === element ? count + 1 : count;
+    }, 0);
+}
+
+// Check if a position is box
+function isBox(x, y) {
+    return (level[y][x] === 3 || level[y][x] === 4);
+}
+
+// Check if a position is wall
+function isWall(x, y) {
+    return (level[y][x] === 1);
 }
 
 // Check win condition
-function checkWin() {
-    return boxes.every(box => level[box.y][box.x] === 4);
+function isLevelWin() {
+    return (targetNum === 0); // all target on box
 }
 
 // Save the current game state
@@ -121,20 +129,18 @@ function undo() {
         const lastState = moveHistory.pop();
         player = lastState.player;
         level = lastState.level;
-	boxes = getBoxPositions();
         draw();
     }
 }
 
 // Validate if the player can move to the new position
-function canMove(newX, newY) {
-    if (newY < 0 || newY >= level.length || newX < 0 || newX >= level[newY].length || level[newY][newX] === 1) return false;
+function canMoveTo(newX, newY) {
+    if (newY < 0 || newY >= level.length || newX < 0 || newX >= level[newY].length || isWall(newX, newY)) return false; // [>player|boundary]->cancel, [>player|wall]->cancel
 
-    let boxToMove = boxes.find(box => box.x === newX && box.y === newY);
-    if (boxToMove) {
+    if (isBox(newX, newY)) {
         const boxNewX = newX + (newX - player.x);
         const boxNewY = newY + (newY - player.y);
-        if (boxNewY < 0 || boxNewY >= level.length || boxNewX < 0 || boxNewX >= level[boxNewY].length || level[boxNewY][boxNewX] === 1 || boxes.some(box => box.x === boxNewX && box.y === boxNewY)) return false;
+        if (boxNewY < 0 || boxNewY >= level.length || boxNewX < 0 || boxNewX >= level[boxNewY].length || isWall(boxNewX, boxNewY) || isBox(boxNewX, boxNewY)) return false; // [>box|boundary]->cancel, [>box|wall]->cancel, [>box|box]->cancel
     }
 
     return true;
@@ -142,28 +148,27 @@ function canMove(newX, newY) {
 
 // Handle keyboard input
 document.addEventListener('keydown', (event) => {   
-    let newX = player.x;
-    let newY = player.y;
+    let deltaX = 0, deltaY = 0;
 
     switch (event.key) {
         case 'ArrowUp': 
       	case 'w': 
-	    newY--; 
+	    deltaY = -1; 
 	    player.direction = 'up';
 	    break;
         case 'ArrowDown':
 	case 's':
-	    newY++;
+	    deltaY = 1;
 	    player.direction = 'down';
 	    break;
         case 'ArrowLeft':
 	case 'a':
-	    newX--;
+	    deltaX = -1;
 	    player.direction = 'left';
 	    break;
         case 'ArrowRight':
 	case 'd':
-	    newX++;
+	    deltaX = 1;
 	    player.direction = 'right';
 	    break;
         case 'z':
@@ -176,28 +181,34 @@ document.addEventListener('keydown', (event) => {
 	    return;
     }
 
-    if (canMove(newX, newY)) {
+    newX = player.x + deltaX;
+    newY = player.y + deltaY;
+
+    if (canMoveTo(newX, newY)) {
         saveState();
 
  	// Move boxes if necessary
-	let boxToMove = boxes.find(box => box.x === newX && box.y === newY);
-	if (boxToMove) {
-            const boxNewX = newX + (newX - player.x);
-            const boxNewY = newY + (newY - player.y);
+	if (isBox(newX, newY)) {
+            const boxNewX = newX + deltaX; 
+            const boxNewY = newY + deltaY;
 
-            level[boxToMove.y][boxToMove.x] = (level[boxToMove.y][boxToMove.x] === 4) ? 2 : 0;
-	    level[boxNewY][boxNewX] = (level[boxNewY][boxNewX] === 2) ? 4 : 3;
+            if (level[newY][newX] === 4) {
+		level[newY][newX] = 2;
+		targetNum++;
+	    } else level[newY][newX] = 0;
 
-            boxToMove.x = boxNewX;
-            boxToMove.y = boxNewY;
+	    if (level[boxNewY][boxNewX] === 2) {
+		level[boxNewY][boxNewX] = 4;
+		targetNum--;
+	    } else level[boxNewY][boxNewX] = 3;
 	}
-	
+
 	player.x = newX;
-        player.y = newY;
+    	player.y = newY;
 
         draw();
 
-        if (checkWin()) {
+        if (isLevelWin()) {
             currentLevelIndex++;
             if (currentLevelIndex < levels.length) {
                 resetLevel();
